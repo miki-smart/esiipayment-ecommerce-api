@@ -72,7 +72,7 @@ public sealed class PaymentGatewayFactory
             ctx: new JsonObject
             {
                 ["webhook_url"] = WebhookUrl("chapa", orderId),
-                ["return_url"] = _config["Payments:ReturnUrl"] ?? "https://example.com/thanks",
+                ["return_url"] = ReturnUrl(orderId),
             },
             credentials: new JsonObject
             {
@@ -100,6 +100,22 @@ public sealed class PaymentGatewayFactory
         _manifests.TryGetValue(provider, out var manifest)
             ? manifest
             : throw new ArgumentOutOfRangeException(nameof(provider), provider, $"Unknown provider. Supported: {string.Join(", ", SupportedProviders)}.");
+
+    /// <summary>
+    /// Where the provider sends the payer's browser once they finish (or
+    /// abandon) payment on its hosted page. Configured by
+    /// <c>Payments:ReturnUrl</c>; the order id is appended so the landing
+    /// page can look up and show that payment's real outcome rather than
+    /// assuming the payer arriving back means success — the provider
+    /// redirects on cancel too, and the authoritative status only comes
+    /// from a sync or a webhook.
+    /// </summary>
+    private string ReturnUrl(string orderId)
+    {
+        var configured = _config["Payments:ReturnUrl"] ?? "http://localhost:5173/thanks";
+        var separator = configured.Contains('?') ? '&' : '?';
+        return $"{configured}{separator}orderId={Uri.EscapeDataString(orderId)}";
+    }
 
     private string WebhookUrl(string provider, string orderId) =>
         $"{(_config["Payments:PublicBaseUrl"] ?? "http://localhost:5016").TrimEnd('/')}/esiipayment/webhooks/{provider}/{orderId}";
