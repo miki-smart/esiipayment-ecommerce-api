@@ -8,9 +8,9 @@ against Ethiopian PSPs described by the
 The React storefront that talks to it lives in a separate repository:
 [esiipayment-ecommerce-web](https://github.com/miki-smart/esiipayment-ecommerce-web).
 
-The SDK is consumed as a **NuGet package**, not as source — there is no
-submodule and no spec-repo checkout here. Provider manifests arrive via the
-`Esiipayment.Providers` package.
+The SDK is consumed as a **NuGet package** from nuget.org, not as source —
+there is no submodule, no spec-repo checkout, and no local feed here.
+Provider manifests arrive via the `Esiipayment.Providers` package.
 
 ## Endpoints
 
@@ -31,26 +31,8 @@ touched no endpoint.
 
 ## Running it
 
-The SDK isn't on nuget.org yet, so first build it into a local feed:
-
-```sh
-git clone https://github.com/miki-smart/esiipayment-dotnet.git
-cd esiipayment-dotnet && git submodule update --init --recursive
-pwsh ./pack-local.ps1        # writes ../esiipayment-local-feed
-```
-
-`nuget.config` here points at `../esiipayment-local-feed`, so clone this
-repo **as a sibling** of `esiipayment-dotnet`:
-
-```
-some-folder/
-  esiipayment-dotnet/
-  esiipayment-local-feed/     <- created by pack-local.ps1
-  esiipayment-ecommerce-api/  <- this repo
-  esiipayment-ecommerce-web/
-```
-
-Then:
+Clone and run. The SDK restores from nuget.org, so there is nothing to
+build first and no sibling checkout to arrange:
 
 ```sh
 dotnet run --project src/EsiipaymentEcommerce.Api    # http://localhost:5016
@@ -58,16 +40,32 @@ dotnet run --project src/EsiipaymentEcommerce.Api    # http://localhost:5016
 
 SQLite is created on first run; products are seeded automatically.
 
-### After changing the SDK
+### Working against an unreleased SDK
 
-Re-pack, then clear the cached copy — NuGet caches by exact version and
-`2.0.0-local` doesn't change between builds:
+The pinned version is a **prerelease** (`2.0.0-preview.1`) while the SDK
+settles. To try a local SDK build instead of the published one, pack it and
+add that feed for a single restore — don't edit `nuget.config`, so the
+committed configuration keeps matching what CI does:
+
+```sh
+git clone https://github.com/miki-smart/esiipayment-dotnet.git
+cd esiipayment-dotnet && git submodule update --init --recursive
+pwsh ./pack-local.ps1        # writes ../esiipayment-local-feed
+
+cd ../esiipayment-ecommerce-api
+dotnet restore -s https://api.nuget.org/v3/index.json -s ../esiipayment-local-feed
+```
+
+Then point the three `PackageReference` versions at `2.0.0-local`. NuGet
+caches by exact version and `2.0.0-local` doesn't change between builds, so
+after re-packing you must drop the cached copy:
 
 ```sh
 dotnet nuget locals http-cache --clear
 rm -rf ~/.nuget/packages/esiipayment.*
-dotnet build
 ```
+
+Revert both before committing — a `-local` version cannot restore in CI.
 
 ## Providers
 
