@@ -1,16 +1,35 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
 
   <!--
-    The Esiipayment SDK is consumed as a package, not as source. Until it is
-    published to nuget.org it resolves from the local feed registered in
-    ../../nuget.config — run pack-local.ps1 in the esiipayment-dotnet repo
-    to populate it. Esiipayment.Providers carries the provider manifests, so
-    this repo needs no spec-repo checkout or submodule.
+    The Esiipayment SDK is consumed as a package from nuget.org, not as
+    source. Esiipayment.Providers carries the provider manifests, so this repo
+    needs no spec-repo checkout or submodule.
+
+    Versions are pinned exactly rather than floating (2.0.*): this is a
+    payments integration, so an SDK upgrade should be a reviewed commit that
+    CI runs against, never something a restore picks up on its own.
+
+    They all move together — the manifests in Esiipayment.Providers are
+    versioned alongside the runtime that was conformance-tested against them.
+
+    Esiipayment.Providers.Telebirr is the native provider implementation:
+    Telebirr signs a canonicalized parameter string on every request, which the
+    manifest DSL deliberately cannot express, so its behaviour is code rather
+    than data (spec/03-manifest-dsl.md#native-providers). Each native provider
+    is a separate package, so an application that never touches Telebirr does
+    not carry its implementation.
+
+    2.1.0-preview.1 is the first SDK version with the IPaymentClient seam that
+    lets a native provider be reached through the same surface as a
+    manifest-driven one. Until it is published, restore against a local feed:
+        (in esiipayment-dotnet)  ./pack-local.ps1 -Version 2.1.0-preview.1
+        (here)                   dotnet restore -s https://api.nuget.org/v3/index.json -s ../esiipayment-local-feed
   -->
   <ItemGroup>
-    <PackageReference Include="Esiipayment.Core" Version="2.0.0-local" />
-    <PackageReference Include="Esiipayment.AspNetCore" Version="2.0.0-local" />
-    <PackageReference Include="Esiipayment.Providers" Version="2.0.0-local" />
+    <PackageReference Include="Esiipayment.Core" Version="2.1.0-preview.1" />
+    <PackageReference Include="Esiipayment.AspNetCore" Version="2.1.0-preview.1" />
+    <PackageReference Include="Esiipayment.Providers" Version="2.1.0-preview.1" />
+    <PackageReference Include="Esiipayment.Providers.Telebirr" Version="2.1.0-preview.1" />
   </ItemGroup>
 
   <ItemGroup>

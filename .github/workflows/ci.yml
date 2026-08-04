@@ -1,0 +1,88 @@
+name: CI
+
+# This repo consumes the Esiipayment SDK as a published package, so the thing
+# most likely to break it is a restore problem rather than a code change: an
+# SDK version that was never published, a package missing from a release
+# (Esiipayment.Providers was omitted from the SDK's publish workflow once), or
+# a -local version committed by accident after local SDK work. A restore and
+# build on a clean runner catches all three, which a developer machine with a
+# warm ~/.nuget/packages cache cannot.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      # Guards the failure mode the README's local-SDK workflow invites: a
+      # -local version restores fine on the machine that packed it and is
+      # unresolvable anywhere else, including here.
+      - name: Reject -local SDK versions
+        run: |
+          if grep -rn 'Version="[^"]*-local"' --include='*.csproj' .; then
+            echo "::error::A PackageReference pins a '-local' version. Those exist only in a local pack-local.ps1 feed and cannot restore from nuget.org."
+            exit 1
+          fi
+          echo "No -local package versions."
+
+      # No --locked-mode: there is no committed lock file. This restore
+      # deliberately reaches nuget.org so a missing or unpublished SDK version
+      # fails here rather than at deploy time.
+      - name: Restore
+        run: dotnet restore
+
+      - name: Build
+        run: dotnet build --configuration Release --no-restore
+
+      # Proves the SDK packages are not merely restorable but usable.
+      # PaymentGatewayFactory's constructor calls ManifestLoader.Load on the
+      # manifest of every supported provider, so serving this endpoint at all
+      # means Esiipayment.Providers really shipped its embedded manifests and
+      # Esiipayment.Core could parse each one. A package that restored but
+      # carried no embedded resources would fail here, not at build time.
+      # --no-launch-profile matters: Properties/launchSettings.json pins
+      # applicationUrl to localhost:5016 and overrides ASPNETCORE_URLS, so
+      # without it the app ignores the port asked for here and also tries to
+      # launch a browser. --urls on the command line is highest-precedence
+      # configuration, so the bound address is unambiguous.
+      - name: Smoke test the bundled provider manifests
+        run: |
+          dotnet run --project src/EsiipaymentEcommerce.Api --configuration Release --no-build \
+            --no-launch-profile -- --urls http://127.0.0.1:5016 > app.log 2>&1 &
+          app_pid=$!
+          trap 'kill "$app_pid" 2>/dev/null || true' EXIT
+
+          for _ in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:5016/api/providers -o providers.json; then break; fi
+            if ! kill -0 "$app_pid" 2>/dev/null; then
+              echo "::error::The API exited during startup."
+              cat app.log
+              exit 1
+            fi
+            sleep 2
+          done
+
+          if [ ! -s providers.json ]; then
+            echo "::error::The API never served /api/providers within 60s."
+            cat app.log
+            exit 1
+          fi
+
+          cat providers.json
+          echo
+          for provider in mock chapa telebirr; do
+            if ! grep -q "\"id\":\"$provider\"" providers.json; then
+              echo "::error::Provider '$provider' is missing from /api/providers — its bundled manifest did not load."
+              exit 1
+            fi
+          done
+          echo "All three bundled manifests loaded."
